@@ -216,6 +216,17 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// exponer funciones al scope global para que los onclick del HTML funcionen
+window.changeMonth = (d) => changeMonth(d);
+window.showScreen = (id, btn) => showScreen(id, btn);
+window.setType = (t) => setType(t);
+window.addTx = () => addTx();
+window.delTx = (id) => delTx(id);
+window.importScan = (d) => importScan(d);
+window.handleTicket = (e) => handleTicket(e);
+window.selectedYear = 0;
+window.selectYear = (y) => { selectedYear = y; renderAnual(); };
+
 const CATS=['Alimentación','Servicios','Salud','Educación','Transporte','Entretenimiento','Ahorros','Otros'];
 const CAT_COLORS=['#1D9E75','#378ADD','#D4537E','#7F77DD','#D85A30','#BA7517','#639922','#888780'];
 const CAT_EMOJIS={Alimentación:'🛒',Servicios:'💡',Salud:'❤️',Educación:'📚',Transporte:'🚌',Entretenimiento:'🎬',Ahorros:'💰',Otros:'📦'};
