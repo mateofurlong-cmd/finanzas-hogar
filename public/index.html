@@ -160,7 +160,7 @@
 
   <!-- TOP BAR -->
   <div class="topbar" id="topbar">
-    <span class="topbar-title">💰 Finanzas</span>
+    <span class="topbar-title">💰 Finanzas <span id="sync-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#ccc;margin-left:4px;vertical-align:middle"></span></span>
     <div class="month-nav">
       <button onclick="changeMonth(-1)">‹</button>
       <span class="month-label" id="monthLabel"></span>
@@ -200,7 +200,22 @@
   </nav>
 </div>
 
-<script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, doc, onSnapshot, addDoc, deleteDoc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA0IwaRWf8fOEJmTmV3dhIpsTn7V_r31KI",
+  authDomain: "finanzas-hogar-bfb7c.firebaseapp.com",
+  projectId: "finanzas-hogar-bfb7c",
+  storageBucket: "finanzas-hogar-bfb7c.firebasestorage.app",
+  messagingSenderId: "821752721307",
+  appId: "1:821752721307:web:76ee314134fd9addae3b3e"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 const CATS=['Alimentación','Servicios','Salud','Educación','Transporte','Entretenimiento','Ahorros','Otros'];
 const CAT_COLORS=['#1D9E75','#378ADD','#D4537E','#7F77DD','#D85A30','#BA7517','#639922','#888780'];
 const CAT_EMOJIS={Alimentación:'🛒',Servicios:'💡',Salud:'❤️',Educación:'📚',Transporte:'🚌',Entretenimiento:'🎬',Ahorros:'💰',Otros:'📦'};
@@ -210,8 +225,34 @@ const MONTHS_S=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov
 let txs=[], budgets={}, currentDate=new Date(), selectedYear=new Date().getFullYear(), currentType='expense';
 let barChart, donutChart, annualChart;
 
-function load(){try{txs=JSON.parse(localStorage.getItem('hfpwa_txs')||'[]');budgets=JSON.parse(localStorage.getItem('hfpwa_budgets')||'{}')}catch(e){}}
-function save(){try{localStorage.setItem('hfpwa_txs',JSON.stringify(txs));localStorage.setItem('hfpwa_budgets',JSON.stringify(budgets))}catch(e){}}
+// mostrar indicador de conexión
+function setStatus(ok){
+  const el=document.getElementById('sync-dot');
+  if(el)el.style.background=ok?'#1D9E75':'#D85A30';
+}
+
+// escuchar cambios en tiempo real desde Firebase
+function load(){
+  // transacciones
+  onSnapshot(collection(db,'transacciones'), snap=>{
+    txs=snap.docs.map(d=>({...d.data(),_docId:d.id}));
+    txs.sort((a,b)=>b.date.localeCompare(a.date));
+    setStatus(true);
+    renderAll();
+    if(document.getElementById('s-anual').classList.contains('active'))renderAnual();
+  }, ()=>setStatus(false));
+
+  // presupuestos
+  onSnapshot(doc(db,'config','budgets'), snap=>{
+    if(snap.exists()) budgets=snap.data();
+    renderAll();
+  });
+}
+
+async function save(){
+  // budgets se guardan en Firebase, no localmente
+  await setDoc(doc(db,'config','budgets'), budgets);
+}
 function mk(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
 function mTxs(){return txs.filter(t=>t.date&&t.date.startsWith(mk(currentDate)))}
 function yTxs(y){return txs.filter(t=>t.date&&t.date.startsWith(y+'-'))}
@@ -236,22 +277,24 @@ function setType(t){
   document.getElementById('btn-exp').className='type-btn'+(t==='expense'?' active-exp':'');
 }
 
-function addTx(){
+async function addTx(){
   const desc=document.getElementById('f-desc').value.trim();
   const amount=parseFloat(document.getElementById('f-amount').value);
   const cat=document.getElementById('f-cat').value;
   const date=document.getElementById('f-date').value;
   if(!desc||!amount||amount<=0||!date){alert('Completá todos los campos.');return}
-  txs.unshift({id:Date.now()+Math.random(),type:currentType,desc,amount,cat,date});
-  save();renderAll();
+  await addDoc(collection(db,'transacciones'),{type:currentType,desc,amount,cat,date,createdAt:Date.now()});
   document.getElementById('f-desc').value='';
   document.getElementById('f-amount').value='';
-  // vibrate feedback
   if(navigator.vibrate)navigator.vibrate(30);
   showScreen('resumen',document.querySelector('.nav-item'));
 }
 
-function delTx(id){if(confirm('¿Eliminar esta transacción?')){txs=txs.filter(t=>t.id!=id);save();renderAll()}}
+async function delTx(docId){
+  if(confirm('¿Eliminar esta transacción?')){
+    await deleteDoc(doc(db,'transacciones',docId));
+  }
+}
 
 function renderAll(){
   const m=mTxs();
@@ -284,7 +327,7 @@ function renderResumen(m){
           <div class="tx-right">
             <div class="tx-amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</div>
           </div>
-          <button class="tx-del" onclick="delTx(${t.id})">×</button>
+          <button class="tx-del" onclick="delTx('${t._docId}')">×</button>
         </div>`).join(''):'<div class="empty">Sin transacciones este mes</div>'}
     </div>`;
 }
@@ -312,7 +355,7 @@ function renderRegistrar(m){
           <div class="tx-icon ${t.type}">${CAT_EMOJIS[t.cat]||'📦'}</div>
           <div class="tx-info"><div class="tx-desc">${t.desc}</div><div class="tx-meta">${t.cat} · ${t.date}</div></div>
           <div class="tx-amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</div>
-          <button class="tx-del" onclick="delTx(${t.id})">×</button>
+          <button class="tx-del" onclick="delTx('${t._docId}')">×</button>
         </div>`).join(''):'<div class="empty">Sin transacciones</div>'}
     </div>`;
   if(currentType==='income'){document.getElementById('btn-inc').className='type-btn active-inc';document.getElementById('btn-exp').className='type-btn';}
@@ -375,7 +418,7 @@ function renderBudget(m){
         <span style="font-size:18px;margin-right:2px">${CAT_EMOJIS[cat]}</span>
         <span class="budget-cat">${cat}</span>
         <span class="budget-spent">${fmt(spent)}${lim?' / '+fmt(lim):''}</span>
-        <input class="budget-input" type="number" placeholder="Límite" value="${lim||''}" onchange="budgets['${cat}']=parseFloat(this.value)||0;save();renderAll()">
+        <input class="budget-input" type="number" placeholder="Límite" value="${lim||''}" onchange="budgets['${cat}']=parseFloat(this.value)||0;save()">
         <div class="budget-dot" style="background:${over?'#D85A30':ok?'#1D9E75':'#ccc'}"></div>
       </div>`}).join('')}
   </div>`;
@@ -495,24 +538,24 @@ function showScanResult(data){
   <button class="btn-primary" onclick="importScan(${JSON.stringify(data).replace(/"/g,'&quot;')})">Importar seleccionados</button>`;
 }
 
-function importScan(data){
+async function importScan(data){
   let count=0;
+  const promises=[];
   data.items.forEach((it,i)=>{
     if(document.getElementById('sc'+i)?.checked){
-      txs.unshift({id:Date.now()+Math.random(),type:'expense',desc:it.desc,amount:it.amount,cat:it.cat,date:data.date});
+      promises.push(addDoc(collection(db,'transacciones'),{type:'expense',desc:it.desc,amount:it.amount,cat:it.cat,date:data.date,createdAt:Date.now()}));
       count++;
     }
   });
-  save();renderAll();
+  await Promise.all(promises);
   document.getElementById('scanArea').innerHTML=`<div style="padding:20px;text-align:center;font-size:17px;color:var(--green);font-weight:600">✓ ${count} ítem${count!==1?'s':''} importado${count!==1?'s':''}</div>`;
   document.getElementById('ticketPreview').style.display='none';
   if(navigator.vibrate)navigator.vibrate([30,50,30]);
 }
 
 // INIT
-load();
 currentDate=new Date();
-renderAll();
+load();
 initTicket();
 
 // Register service worker
