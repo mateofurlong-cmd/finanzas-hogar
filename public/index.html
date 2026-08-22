@@ -632,9 +632,24 @@ async function handleTicket(e){
   reader.onload=async(ev)=>{
     const prev=document.getElementById('ticketPreview');
     prev.src=ev.target.result;prev.style.display='block';
-    await scanTicket(ev.target.result.split(',')[1],file.type||'image/jpeg');
+    const compressed=await compressImage(ev.target.result);
+    await scanTicket(compressed.split(',')[1],'image/jpeg');
   };
   reader.readAsDataURL(file);e.target.value='';
+}
+async function compressImage(dataUrl,maxW=1200,quality=0.75){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,maxW/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      res(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.src=dataUrl;
+  });
 }
 
 async function scanTicket(b64,mime){
