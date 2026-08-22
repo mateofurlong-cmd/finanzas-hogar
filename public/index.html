@@ -286,6 +286,24 @@ function load(){
   });
 }
 
+// Detección automática de categoría por palabras clave
+const CAT_KEYWORDS={
+  'Alimentación':['super','supermercado','mercado','carrefour','dia','coto','jumbo','disco','vea','walmart','almacen','verduleria','panaderia','carniceria','fiambreria','kiosco','kiosko','delivery','rappi','pedidosya','mcdonalds','burger','pizza','sushi','resto','restaurante','bar','cafe','cafeteria','heladeria','comida','facturas','medialunas','pan'],
+  'Servicios':['luz','edesur','edenor','gas','metrogas','naturgy','agua','aysa','internet','fibertel','telecentro','flow','cablevision','claro','personal','movistar','tuenti','telefono','celular','expensas','alquiler','seguro','wifi'],
+  'Salud':['farmacia','farmacity','doctor','medico','consulta','clinica','hospital','laboratorio','analisis','odontol','dentista','optometri','anteojo','lente','medicina','obra social','osde','swiss','galeno','medicamento','remedios'],
+  'Educación':['colegio','escuela','universidad','facultad','curso','libro','libreria','cuota','matricula','ingles','clases'],
+  'Transporte':['nafta','combustible','ypf','shell','axion','pedido','uber','cabify','remis','colectivo','subte','tren','peaje','estacionamiento','garage','sube','auto','mecanico','repuesto'],
+  'Entretenimiento':['cine','teatro','netflix','spotify','disney','hbo','amazon','prime','juego','videojuego','steam','play','musica','concierto','show','entrada','evento','gym','gimnasio','deporte'],
+  'Ahorros':['ahorro','inversion','plazo fijo','fondo','crypto','bitcoin','dolar','divisa'],
+};
+function detectCat(desc){
+  const d=desc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  for(const [cat,words] of Object.entries(CAT_KEYWORDS)){
+    if(words.some(w=>d.includes(w)))return cat;
+  }
+  return null;
+}
+
 function mk(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
 function mTxs(){return txs.filter(t=>t.date&&t.date.startsWith(mk(currentDate))&&(t.curr||'ARS')===viewCurr)}
 function yTxs(y){return txs.filter(t=>t.date&&t.date.startsWith(y+'-')&&(t.curr||'ARS')===viewCurr)}
@@ -321,6 +339,20 @@ function setPay(p){currentPay=p;['efectivo','debito','credito','transferencia'].
 function setCurr(c){currentCurr=c;['ARS','USD'].forEach(x=>{const el=document.getElementById('c-'+x.toLowerCase());if(el)el.className='curr-chip'+(x===c?' active-'+x.toLowerCase():'')})}
 function setEditPay(p){editPay=p;['efectivo','debito','credito','transferencia'].forEach(x=>{const el=document.getElementById('ep-'+x);if(el)el.classList.toggle('active',x===p)})}
 function setEditCurr(c){editCurr=c;['ars','usd'].forEach(x=>{const el=document.getElementById('ec-'+x);if(el)el.className=(x.toUpperCase()===c?'active-'+x:'')})}
+function autoCat(desc){
+  const hint=document.getElementById('cat-hint');
+  if(!hint)return;
+  if(desc.length<3){hint.style.display='none';return}
+  const cat=detectCat(desc);
+  if(cat){
+    const sel=document.getElementById('f-cat');
+    if(sel)sel.value=cat;
+    hint.style.display='block';
+    hint.textContent=`${CAT_EMOJIS[cat]||'📦'} Detectado: ${cat}`;
+  } else {
+    hint.style.display='none';
+  }
+}
 function setFijoPay(p){fijoPay=p;['efectivo','debito','credito','transferencia'].forEach(x=>{const el=document.getElementById('nfp-'+x);if(el)el.classList.toggle('active',x===p)})}
 function setFijoCurr(c){fijoCurr=c;['ars','usd'].forEach(x=>{const el=document.getElementById('nfc-'+x);if(el)el.className='curr-chip'+(x.toUpperCase()===c?' active-'+x:'')})}
 
@@ -475,18 +507,34 @@ function renderResumen(m){
   const inc=m.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const exp=m.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const bal=inc-exp;
+  const pct=inc>0?Math.min(100,Math.round(exp/inc*100)):exp>0?100:0;
   const pendFijos=fijos.filter(f=>(f.curr||'ARS')===viewCurr&&!pagosFijos[fijoKey(f._docId)]);
+  // top categorías de gasto
+  const expTotals={};
+  m.filter(t=>t.type==='expense').forEach(t=>expTotals[t.cat]=(expTotals[t.cat]||0)+t.amount);
+  const topCats=Object.entries(expTotals).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const maxCat=topCats[0]?topCats[0][1]:1;
+
   document.getElementById('s-resumen').innerHTML=`
     ${currFilterHTML()}
     ${pendFijos.length?`<div class="alert-banner" onclick="showScreen('fijos',document.getElementById('nav-fijos'))">⚠️ <strong>${pendFijos.length} gasto${pendFijos.length!==1?'s':''} fijo${pendFijos.length!==1?'s':''}</strong> pendiente${pendFijos.length!==1?'s':''} — tocá para ver</div>`:''}
-    <div class="metrics">
-      <div class="metric"><label>Ingresos ${viewCurr}</label><div class="val inc">${fmt(inc)}</div></div>
-      <div class="metric"><label>Gastos ${viewCurr}</label><div class="val exp">${fmt(exp)}</div></div>
-      <div class="metric metric-full"><label>Balance del mes</label><div class="val" style="color:${bal>=0?'var(--green)':'var(--red)'}">${(bal>=0?'+':'-')+fmt(bal)}</div></div>
+    <div class="card" style="background:${bal>=0?'var(--green)':'var(--red)'};color:#fff;padding:20px">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.75;margin-bottom:6px">Balance ${MONTHS[currentDate.getMonth()]}</div>
+      <div style="font-size:36px;font-weight:700;letter-spacing:-1px">${(bal>=0?'+':'')+fmt(bal)}</div>
+      <div style="margin-top:14px;height:4px;background:rgba(255,255,255,.25);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:#fff;border-radius:2px;opacity:.7;transition:width .5s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px;opacity:.9">
+        <span>↑ ${fmt(inc)}</span><span>↓ ${fmt(exp)} (${pct}%)</span>
+      </div>
     </div>
+    ${topCats.length?`<div class="card">
+      <div class="card-title">Top gastos del mes</div>
+      ${topCats.map(([cat,val])=>{const i=CATS.indexOf(cat),color=i>=0?CAT_COLORS[i]:'#888780';return`<div class="bar-row"><span class="bar-emoji">${CAT_EMOJIS[cat]||'📦'}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(val/maxCat*100)}%;background:${color}"></div></div><span class="bar-val" style="color:${color}">${fmt(val)}</span></div>`}).join('')}
+    </div>`:''}
     <div class="card">
       <div class="card-title">Últimas transacciones</div>
-      ${m.length?m.slice(0,20).map(t=>txHTML(t)).join(''):'<div class="empty">Sin transacciones en ${viewCurr} este mes</div>'}
+      ${m.length?m.slice(0,15).map(t=>txHTML(t)).join(''):'<div class="empty">Sin transacciones en ${viewCurr} este mes</div>'}
     </div>`;
 }
 
@@ -498,7 +546,8 @@ function renderRegistrar(m){
         <button class="type-btn active-exp" id="btn-exp" onclick="setType('expense')">— Gasto</button>
         <button class="type-btn" id="btn-inc" onclick="setType('income')">+ Ingreso</button>
       </div>
-      <div class="field"><label>Descripción</label><input type="text" id="f-desc" placeholder="Ej: Supermercado"></div>
+      <div class="field"><label>Descripción</label><input type="text" id="f-desc" placeholder="Ej: Supermercado" oninput="autoCat(this.value)"></div>
+      <div id="cat-hint" style="display:none;margin:-8px 0 10px;padding:7px 12px;border-radius:var(--radius-sm);background:var(--green-light);color:var(--green-dark);font-size:13px;font-weight:500"></div>
       <div class="form-row">
         <div class="field"><label>Monto</label><input type="number" id="f-amount" placeholder="0" inputmode="decimal"></div>
         <div class="field"><label>Fecha</label><input type="date" id="f-date" value="${new Date().toISOString().split('T')[0]}"></div>
@@ -632,6 +681,7 @@ async function handleTicket(e){
   reader.onload=async(ev)=>{
     const prev=document.getElementById('ticketPreview');
     prev.src=ev.target.result;prev.style.display='block';
+    // Comprimir imagen antes de enviar
     const compressed=await compressImage(ev.target.result);
     await scanTicket(compressed.split(',')[1],'image/jpeg');
   };
