@@ -180,10 +180,11 @@
       <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       Menú
     </button>
-    <button class="nav-fab primary" onclick="showScreen('ticket',null);closeDrawer()">
+    <label class="nav-fab primary" style="cursor:pointer">
+      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleTicket(event)">
       <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
       Escanear
-    </button>
+    </label>
     <button class="nav-fab secondary" onclick="showScreen('registrar',null);closeDrawer()">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
       Agregar
@@ -214,6 +215,14 @@
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
       Categorías
     </button>
+  </div>
+</div>
+
+<!-- MODAL ESCANEO -->
+<div class="modal-overlay" id="scanModal" style="display:none" onclick="if(event.target.id==='scanModal')closeScanModal()">
+  <div class="modal">
+    <div class="modal-title">📷 Ticket escaneado <button class="modal-close" onclick="closeScanModal()">×</button></div>
+    <div id="scanModalArea"></div>
   </div>
 </div>
 
@@ -703,16 +712,20 @@ function initTicket(){
 
 async function handleTicket(e){
   const file=e.target.files[0];if(!file)return;
+  e.target.value='';
+  openScanModal();
   const reader=new FileReader();
   reader.onload=async(ev)=>{
-    const prev=document.getElementById('ticketPreview');
-    prev.src=ev.target.result;prev.style.display='block';
-    // Comprimir imagen antes de enviar
     const compressed=await compressImage(ev.target.result);
     await scanTicket(compressed.split(',')[1],'image/jpeg');
   };
-  reader.readAsDataURL(file);e.target.value='';
+  reader.readAsDataURL(file);
 }
+function openScanModal(){
+  document.getElementById('scanModal').style.display='flex';
+  document.getElementById('scanModalArea').innerHTML='<div class="spinner-wrap"><div class="spinner"></div><span>Analizando el ticket...</span></div>';
+}
+function closeScanModal(){document.getElementById('scanModal').style.display='none'}
 async function compressImage(dataUrl,maxW=1200,quality=0.75){
   return new Promise(res=>{
     const img=new Image();
@@ -729,8 +742,7 @@ async function compressImage(dataUrl,maxW=1200,quality=0.75){
 }
 
 async function scanTicket(b64,mime){
-  const area=document.getElementById('scanArea');
-  area.innerHTML=`<div class="spinner-wrap"><div class="spinner"></div><span>Analizando el ticket...</span></div>`;
+  const area=document.getElementById('scanModalArea');
   try{
     const resp=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,mediaType:mime})});
     const parsed=await resp.json();
@@ -742,7 +754,7 @@ async function scanTicket(b64,mime){
 }
 
 function showScanResult(data){
-  const area=document.getElementById('scanArea');
+  const area=document.getElementById('scanModalArea');
   if(!data.items?.length){area.innerHTML='<div style="padding:16px;color:var(--text2);font-size:15px">No se encontraron ítems.</div>';return}
   const curr=data.curr||'ARS';
   area.innerHTML=`<div class="scan-card">
@@ -761,9 +773,9 @@ async function importScan(data){
     }
   });
   await Promise.all(promises);
-  document.getElementById('scanArea').innerHTML=`<div style="padding:20px;text-align:center;font-size:17px;color:var(--green);font-weight:600">✓ ${count} ítem${count!==1?'s':''} importado${count!==1?'s':''}</div>`;
-  document.getElementById('ticketPreview').style.display='none';
   if(navigator.vibrate)navigator.vibrate([30,50,30]);
+  setTimeout(()=>closeScanModal(),800);
+  document.getElementById('scanModalArea').innerHTML=`<div style="padding:20px;text-align:center;font-size:17px;color:var(--green);font-weight:600">✓ ${count} ítem${count!==1?'s':''} importado${count!==1?'s':''}</div>`;
 }
 
 
@@ -809,6 +821,8 @@ window.setViewCurr=setViewCurr;
 window.addFijo=addFijo;window.delFijo=delFijo;window.toggleFijo=toggleFijo;
 window.setFijoPay=setFijoPay;window.setFijoCurr=setFijoCurr;
 window.updateBudget=updateBudget;window.importScan=importScan;window.handleTicket=handleTicket;
+window.openDrawer=openDrawer;window.closeDrawer=closeDrawer;
+window.openScanModal=openScanModal;window.closeScanModal=closeScanModal;
 window.addCat=addCat;window.delCat=delCat;window.renderCatEditor=renderCatEditor;
 
 // INIT
